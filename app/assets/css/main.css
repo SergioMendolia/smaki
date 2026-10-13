@@ -11,7 +11,10 @@
   --crepe-color-surface-low: var(--ui-bg-elevated);
   --crepe-color-on-surface: var(--ui-text-highlighted);
   --crepe-color-on-surface-variant: var(--ui-text-muted);
-  --crepe-color-outline: var(--ui-border);
+  /* outline doubles as the border *and* faint icon/text color in crepe
+     themes — a border token is invisible on the muted surfaces, so map it
+     to a visible gray instead */
+  --crepe-color-outline: var(--ui-text-muted);
   --crepe-color-primary: var(--ui-primary);
   --crepe-color-secondary: var(--ui-bg-accented);
   --crepe-color-on-secondary: var(--ui-text-highlighted);

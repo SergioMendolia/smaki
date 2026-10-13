@@ -92,6 +92,43 @@ async function embedImage(file: File): Promise<string> {
   })
 }
 
+/** Crepe AI provider: streams the rewrite from /api/ai/edit */
+async function* aiProvider(context: { document: string, selection: string, instruction: string }, signal: AbortSignal) {
+  const res = await fetch('/api/ai/edit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      document: context.document,
+      selection: context.selection,
+      instruction: context.instruction
+    }),
+    signal
+  })
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => null)
+    throw new Error(err?.statusMessage || `AI request failed (${res.status})`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const text = decoder.decode(value, { stream: true })
+    if (text) yield text
+  }
+}
+
+/** open the AI instruction palette at the current selection (or cursor) */
+async function openAiPalette() {
+  if (!ready || !crepe) return
+  const { editorViewCtx } = await import('@milkdown/kit/core')
+  const { useAIInstructionTooltipAPI } = await import('@milkdown/crepe/feature/ai')
+  crepe.editor.action((ctx: any) => {
+    const { from, to } = ctx.get(editorViewCtx).state.selection
+    useAIInstructionTooltipAPI(ctx).show(from, to)
+  })
+}
+
 onMounted(async () => {
   const { Crepe } = await import('@milkdown/crepe')
   if (!crepeRoot.value) return
@@ -99,13 +136,16 @@ onMounted(async () => {
     root: crepeRoot.value,
     defaultValue: props.page.markdown,
     features: {
-      [Crepe.Feature.AI]: false
+      [Crepe.Feature.AI]: true
     },
     featureConfigs: {
       [Crepe.Feature.Placeholder]: { text: 'Write something…', mode: 'block' },
       [Crepe.Feature.ImageBlock]: {
         onUpload: embedImage,
         inlineOnUpload: embedImage
+      },
+      [Crepe.Feature.AI]: {
+        provider: aiProvider
       }
     }
   })
@@ -145,6 +185,15 @@ onBeforeUnmount(() => {
         class="min-w-0 flex-1 bg-transparent text-3xl font-bold text-highlighted outline-none placeholder:font-normal placeholder:text-muted"
       >
       <div class="ms-auto flex shrink-0 items-center gap-1">
+        <UButton
+          icon="i-lucide-sparkles"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          label="Ask AI"
+          title="Rewrite or generate content with AI (select text first, or just place the cursor)"
+          @click="openAiPalette"
+        />
         <slot name="actions" />
       </div>
     </div>

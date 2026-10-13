@@ -14,7 +14,7 @@
 - Nuxt 4 (new layout: `app/` for frontend, `server/` for Nitro backend — no `pages/` at root).
 - Single catch-all page route: `app/pages/wiki/[...slug].vue`; `/` redirects to `/wiki`.
 - `server/utils/` holds the core logic (`content.ts` filesystem, `indexer.ts` Typesense sync, `typesense.ts`, `bootstrap.ts`, `auth.ts`); `server/plugins/ready.ts` bootstraps collections, `watcher.ts` re-indexes content changes in dev.
-- Content = markdown + files on disk under `content/` (path = wiki URL); state in SQLite (`data/app.db`, better-sqlite3 + Drizzle); search in Typesense (collections `wiki_pages`, `wiki_chunks`); RAG is orchestrated in the app (`server/utils/rag.ts`): LLM query rewriting from client-sent history → hybrid retrieval → friendly uncited answer (citation markers stripped; sources returned separately).
+- Content = markdown + files on disk under `content/` (path = wiki URL); state in SQLite (`data/app.db`, better-sqlite3 + Drizzle); search in Typesense (collections `wiki_pages`, `wiki_chunks`); RAG is orchestrated in the app (`server/utils/rag.ts`): LLM query rewriting from client-sent history → hybrid retrieval → streamed friendly uncited answer (citation markers stripped; sources returned separately). `server/utils/llm.ts` is the OpenAI-compatible client (streaming + non-streaming, `/v1` fallback). AI page editing (`server/api/ai/edit.post.ts`) streams rewrites for the Crepe AI editor feature.
 - Auth: email/password (argon2), session cookies; **all content endpoints require a session**. First registered user becomes admin.
 - Pinia stores in `app/stores/`; `app/middleware/auth.global.ts` + `server/middleware/auth.ts` guard routes/API.
 

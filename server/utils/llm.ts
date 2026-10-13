@@ -13,9 +13,7 @@ function chatUrls(raw: string): string[] {
 }
 
 async function postChat(url: string, body: Record<string, unknown>): Promise<Response> {
-  const config = useRuntimeConfig()
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (config.llmApiKey) headers.authorization = `Bearer ${config.llmApiKey}`
+  const headers = llmHeaders()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
@@ -28,6 +26,13 @@ async function postChat(url: string, body: Record<string, unknown>): Promise<Res
   } finally {
     clearTimeout(timer)
   }
+}
+
+function llmHeaders(): Record<string, string> {
+  const config = useRuntimeConfig()
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (config.llmApiKey) headers.authorization = `Bearer ${config.llmApiKey}`
+  return headers
 }
 
 /**
@@ -81,4 +86,136 @@ export async function llmChat(
     statusCode: 502,
     statusMessage: `LLM endpoint not reachable: ${lastError?.message ?? 'no valid chat/completions endpoint found'}`
   })
+}
+
+/**
+ * Streaming variant of llmChat: yields answer text chunks as they arrive
+ * (SSE `data:` lines, OpenAI-compatible `stream: true`). Honors `signal` for
+ * cancellation by the caller.
+ */
+export async function* llmChatStream(
+  messages: LlmMessage[],
+  opts: { maxTokens?: number, signal?: AbortSignal } = {}
+): AsyncGenerator<string> {
+  const config = useRuntimeConfig()
+  if (!config.llmUrl) {
+    throw createError({ statusCode: 500, statusMessage: 'NUXT_LLM_URL is not configured' })
+  }
+  const body: Record<string, unknown> = {
+    model: config.llmModel,
+    messages,
+    temperature: 0.2,
+    stream: true
+  }
+  if (opts.maxTokens) body.max_tokens = opts.maxTokens
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  opts.signal?.addEventListener('abort', () => controller.abort(), { once: true })
+
+  try {
+    let lastError: Error | null = null
+    for (const url of chatUrls(config.llmUrl)) {
+      let res: Response
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: llmHeaders(),
+          body: JSON.stringify(body),
+          signal: controller.signal
+        })
+      } catch (error) {
+        const e = error as Error
+        lastError = new Error(
+          e.name === 'AbortError'
+            ? `LLM request aborted or timed out after ${TIMEOUT_MS / 1000}s: ${url}`
+            : `LLM request failed (${e.message}): ${url}`
+        )
+        continue
+      }
+      if (res.status === 404) continue
+      if (!res.ok || !res.body) {
+        throw createError({
+          statusCode: 502,
+          statusMessage: `LLM ${res.status} ${res.statusText}: ${(await res.text().catch(() => '')).slice(0, 300)}`
+        })
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) return
+        buffer += decoder.decode(value, { stream: true })
+        let newline: number
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline).trim()
+          buffer = buffer.slice(newline + 1)
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (data === '[DONE]') return
+          try {
+            const parsed = JSON.parse(data)
+            const text = parsed?.choices?.[0]?.delta?.content
+            if (typeof text === 'string' && text) yield text
+          } catch {
+            // skip malformed SSE lines
+          }
+        }
+      }
+    }
+    throw createError({
+      statusCode: 502,
+      statusMessage: `LLM endpoint not reachable: ${lastError?.message ?? 'no valid chat/completions endpoint found'}`
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export interface SanitizeOptions {
+  /** strip [n] citation markers (chat answers) */
+  stripCitations?: boolean
+  /** strip a leading ```markdown fence and its closing ``` (some models fence their output) */
+  stripFences?: boolean
+}
+
+/** characters held back between chunks — a marker split across chunks must not leak */
+const HOLD_BACK = 4
+
+/**
+ * Clean up a streaming LLM output: citation markers and wrapping code fences
+ * can be split across chunks, so keep a small tail buffer between iterations
+ * and strip inside it before yielding.
+ */
+export async function* sanitizeLlmStream(
+  source: AsyncIterable<string>,
+  opts: SanitizeOptions = {}
+): AsyncGenerator<string> {
+  const strip = (text: string): string =>
+    opts.stripCitations ? text.replace(/\s*\[\d{1,2}\]/g, '') : text
+
+  let buffer = ''
+  let lookingForFence = Boolean(opts.stripFences)
+  let hadFence = false
+  for await (const chunk of source) {
+    buffer += chunk
+    // a wrapping fence can only be at the very start of the stream; keep
+    // looking until the content clearly doesn't start with one
+    if (lookingForFence) {
+      const before = buffer
+      buffer = buffer.replace(/^\s*```[a-zA-Z]*[ \t]*\r?\n/, '')
+      if (buffer !== before) hadFence = true
+      if (!buffer.trimStart().startsWith('`')) lookingForFence = false
+    }
+    buffer = strip(buffer)
+    const safe = buffer.slice(0, -HOLD_BACK)
+    buffer = buffer.slice(safe.length)
+    if (safe) yield safe
+  }
+  buffer = strip(buffer)
+  // strip the closing fence of a wrapper we removed at the start
+  if (hadFence) buffer = buffer.replace(/\s*```\s*$/, '')
+  if (buffer) yield buffer
 }

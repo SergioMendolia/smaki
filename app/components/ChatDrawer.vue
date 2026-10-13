@@ -14,7 +14,7 @@ async function send() {
 }
 
 watch(
-  () => chat.messages.length,
+  () => [chat.messages.length, chat.messages[chat.messages.length - 1]?.text],
   async () => {
     await nextTick()
     scrollRef.value?.scrollTo({ top: scrollRef.value.scrollHeight })
@@ -75,10 +75,13 @@ function toggleSources(i: number) {
           >
             <div
               class="max-w-[85%] rounded-lg px-3 py-2 text-sm"
-              :class="message.role === 'user' ? 'whitespace-pre-wrap bg-primary text-inverted' : 'bg-elevated'"
+              :class="message.role === 'user'
+                ? 'whitespace-pre-wrap bg-primary text-inverted'
+                : message.html ? 'bg-elevated' : 'whitespace-pre-wrap bg-elevated'"
             >
               <div v-if="message.html" class="chat-md" v-html="message.html" />
-              <template v-else>{{ message.text }}</template>
+              <template v-else-if="message.text">{{ message.text }}</template>
+              <div v-else-if="chat.busy" class="text-muted">Thinking…</div>
               <div v-if="message.sources?.length" class="mt-2">
                 <UButton
                   size="xs"
@@ -103,10 +106,6 @@ function toggleSources(i: number) {
                 </div>
               </div>
             </div>
-          </div>
-
-          <div v-if="chat.busy" class="flex justify-start">
-            <div class="rounded-lg bg-elevated px-3 py-2 text-sm text-muted">Thinking…</div>
           </div>
         </div>
 

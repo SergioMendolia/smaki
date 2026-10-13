@@ -1,5 +1,5 @@
 import { CHUNKS_COLLECTION, DEFAULT_SYSTEM_PROMPT, PAGES_COLLECTION } from './bootstrap'
-import { llmChat, type LlmMessage } from './llm'
+import { llmChat, llmChatStream, sanitizeLlmStream, type LlmMessage } from './llm'
 import { useTypesense } from './typesense'
 
 export interface RagSource {
@@ -150,23 +150,30 @@ function contextBlock(entries: ContextEntry[]): string {
     .join('\n\n')
 }
 
-/** full RAG pipeline: rewrite → retrieve → assemble context → answer */
-export async function answerQuestion(
+/**
+ * Full RAG pipeline, streaming: rewrite → retrieve → assemble context, then
+ * stream the answer as it is generated. Sources are known before generation
+ * starts, so the caller can emit them immediately.
+ */
+export async function answerQuestionStream(
   q: string,
   history: RagTurn[],
   scope: string
-): Promise<{ answer: string, sources: RagSource[] }> {
+): Promise<{ sources: RagSource[], stream: AsyncGenerator<string> }> {
   const searchQuery = await rewriteQuery(q, history)
   const { pageHits, chunkHits } = await retrieve(searchQuery, scope)
   const budget = Number(useRuntimeConfig().llmMaxBytes) || 65536
   const entries = buildContext(pageHits, chunkHits, budget)
 
   if (!entries.length) {
+    const message = scope
+      ? 'Nothing in this folder matches your question.'
+      : 'Nothing in the wiki matches your question.'
     return {
-      answer: scope
-        ? 'Nothing in this folder matches your question.'
-        : 'Nothing in the wiki matches your question.',
-      sources: []
+      sources: [],
+      stream: (async function* () {
+        yield message
+      })()
     }
   }
 
@@ -181,8 +188,11 @@ export async function answerQuestion(
         'Question: ' + q
     }
   ]
-  // the sources are rendered separately as links — strip any citation
-  // markers the LLM left in the answer text
-  const answer = (await llmChat(messages)).replace(/\s*\[\d{1,2}\]/g, '')
-  return { answer, sources: entries.map(e => e.source) }
+  // citation markers are rendered separately as links — strip them (also
+  // strips a wrapping code fence some models add around the answer)
+  const stream = sanitizeLlmStream(llmChatStream(messages), {
+    stripCitations: true,
+    stripFences: true
+  })
+  return { sources: entries.map(e => e.source), stream }
 }

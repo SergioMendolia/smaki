@@ -109,13 +109,18 @@ content/
   `NUXT_EMBEDDING_URL=<your-provider>/v1`, `NUXT_EMBEDDING_API_KEY=<your-key>`.
   The collections are recreated and reindexed automatically when the embedding
   model changes.
-- **Chat** (`POST /api/chat`) orchestrates RAG in the app: on follow-up questions the
-  LLM first rewrites the question into a standalone query using the conversation
-  history, retrieval then runs the same hybrid search over both collections, and the
-  LLM answers strictly from the assembled context in a warm, conversational style.
-  Any citation markers are stripped from the answer text — sources are shown
-  separately as clickable links. Conversations are multi-turn; the history is kept
-  in the browser and sent with each request.
+- **Chat** (`POST /api/chat`) orchestrates RAG in the app and streams the answer:
+  on follow-up questions the LLM first rewrites the question into a standalone query
+  using the conversation history, retrieval then runs the same hybrid search over
+  both collections, and the LLM answers strictly from the assembled context in a
+  warm, conversational style (NDJSON stream: `sources`, `delta`, `done` events;
+  markdown rendered server-side in `done`). Citation markers are stripped from the
+  answer text — sources are shown separately as clickable links. Conversations are
+  multi-turn; the history is kept in the browser and sent with each request.
+- **AI editing**: every page editor has a built-in AI assistant (Milkdown Crepe's
+  AI feature, backed by `POST /api/ai/edit`). Select text and give an instruction —
+  or type one with the cursor placed — and the rewrite streams in with a diff
+  you accept or reject. Autosave persists the page only after you accept.
 
 ## Auth
 
