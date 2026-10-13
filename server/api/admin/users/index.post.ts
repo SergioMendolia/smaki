@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { count, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { tables, useDb } from '../../../utils/db'
 import { hashPassword, requireAdmin } from '../../../utils/auth'
 

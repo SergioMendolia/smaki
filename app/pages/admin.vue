@@ -26,7 +26,7 @@ const toast = useToast()
 const users = ref<AdminUser[]>([])
 
 async function load() {
-  users.value = await $fetch('/api/admin/users')
+  users.value = await $fetch<AdminUser[]>('/api/admin/users')
 }
 await load()
 

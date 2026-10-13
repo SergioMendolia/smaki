@@ -30,14 +30,10 @@ export default defineEventHandler(async (event) => {
   if (typeof body.source === 'string') {
     source = body.source
   } else if (typeof body.markdown === 'string') {
-    const frontmatter: Record<string, unknown> = {
-      ...(page.frontmatter ?? {}),
-      ...(body.frontmatter ?? {})
-    }
-    for (const key of Object.keys(frontmatter)) {
-      const value = frontmatter[key]
-      if (value === '' || value === null || value === undefined) delete frontmatter[key]
-    }
+    const frontmatter = Object.fromEntries(
+      Object.entries({ ...(page.frontmatter ?? {}), ...(body.frontmatter ?? {}) })
+        .filter(([, value]) => value !== '' && value !== null && value !== undefined),
+    )
     source = matter.stringify(body.markdown, frontmatter)
   } else {
     throw createError({ statusCode: 400, statusMessage: 'Either source or markdown is required' })

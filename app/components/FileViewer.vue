@@ -43,7 +43,7 @@ function humanSize(bytes?: number): string {
           />
         </div>
         <div class="min-h-0 flex-1 overflow-auto bg-default">
-          <img v-if="isImage" :src="previewUrl" :alt="current.filename" class="mx-auto max-h-full object-contain" />
+          <img v-if="isImage" :src="previewUrl" :alt="current.filename" class="mx-auto max-h-full object-contain" >
           <iframe v-else-if="canPreview" :src="previewUrl" :title="current.filename" class="h-full w-full" />
           <div v-else class="flex h-full flex-col items-center justify-center gap-3 text-muted">
             <UIcon name="i-lucide-file-question" class="h-10 w-10" />

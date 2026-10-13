@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { useTreeStore, type TreeNode } from '~/stores/tree'
+import type { TreeNode } from '~/stores/tree'
 
-const tree = useTreeStore()
 const viewer = useFileViewer()
 const mover = useMove()
 

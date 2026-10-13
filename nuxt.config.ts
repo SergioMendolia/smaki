@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-12',
   devtools: { enabled: true },
-  modules: ['@nuxt/ui', '@pinia/nuxt'],
+  modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint'],
   vite: {
     server: {
       allowedHosts: ['localhost', '.docker.test']

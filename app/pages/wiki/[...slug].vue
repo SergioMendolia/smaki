@@ -26,6 +26,7 @@ interface PageResponse {
 
 interface DocItem {
   id: string
+  dir?: string
   filename: string
   mime: string
 }
@@ -104,8 +105,8 @@ useHead(() => ({ title: page.value?.title ? `${page.value.title} — smaki` : 's
 </script>
 
 <template>
-  <!-- error / not found -->
   <div v-if="error" class="mx-auto max-w-3xl">
+    <!-- error / not found -->
     <UAlert
       color="warning"
       variant="subtle"
@@ -202,7 +203,7 @@ useHead(() => ({ title: page.value?.title ? `${page.value.title} — smaki` : 's
           variant="soft"
           size="sm"
           label="Ask this folder"
-          @click="chat.openFolder(page.path, page.title)"
+          @click="chat.openFolder(page.path, page.title ?? 'Wiki')"
         />
         <p class="mt-6 text-sm text-muted">Pages, subfolders and documents in this folder:</p>
         <ul v-if="page.children?.length || page.docs?.length" class="mt-3 space-y-1">
