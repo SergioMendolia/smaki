@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791833747220,
+      "tag": "0000_right_gauntlet",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791906635385,
+      "tag": "0001_attachments_to_files",
+      "breakpoints": true
+    }
+  ]
+}

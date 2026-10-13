@@ -1,0 +1,134 @@
+# smaki — family wiki
+
+A self-hosted family wiki: markdown pages on disk, hybrid full-text + semantic search over
+pages **and** documents (PDF, docx…), and a RAG chat that answers questions from
+your content with source links.
+
+**Stack:** Nuxt 4 + Nitro · Nuxt UI v4 + Tailwind v4 · Pinia · Typesense (search + built-in RAG) ·
+SQLite + Drizzle · markdown with frontmatter on the filesystem.
+
+## Quick start (dev)
+
+```bash
+cp .env.example .env        # set the typesense key, point at your LLM
+docker compose up -d        # typesense + the app (dev, deps installed at boot)
+npm install
+npm run db:generate         # one-time: create the drizzle migration
+npm run dev
+```
+
+Open http://localhost:3000 → the **first account you create becomes the admin**.
+
+The full stack (typesense + app in a container) runs with a plain
+`docker compose up -d`. Behind pontsun's traefik the app answers at
+`smaki.docker.test` (labels in `docker-compose.yml`).
+
+## Configuration (.env)
+
+| Variable | Meaning |
+| --- | --- |
+| `NUXT_TYPESENSE_URL` / `NUXT_TYPESENSE_API_KEY` | Typesense endpoint and key (also used by the container via `TYPESENSE_API_KEY`) |
+| `NUXT_LLM_URL` | OpenAI-compatible chat endpoint used for RAG answers. Pick a model that answers within Typesense's hard 60s LLM timeout |
+| `NUXT_LLM_MODEL` | plain model name — Typesense routes via the `openai/` prefix internally and **strips it before calling your endpoint**. Leave empty to disable chat (search still works) |
+| `NUXT_LLM_API_KEY` | your key for the LLM provider |
+| `NUXT_EMBEDDING_MODEL` | default `ts/e5-small` (built-in, runs inside Typesense, no API key). For OpenAI-compatible embeddings add `NUXT_EMBEDDING_URL` (+ `NUXT_EMBEDDING_API_KEY`) |
+
+⚠️ Switching embedding models requires recreating the Typesense collections
+(delete them or `docker compose down -v` — they are rebuilt automatically at next boot).
+
+### Things worth knowing (learned the hard way)
+
+- **Typesense validates the LLM at conversation-model creation** — your LLM provider must
+  be reachable *before* the app boots (or before its next 30s bootstrap retry).
+- **Typesense enforces a hard 60s timeout per LLM call.** Verbose "thinking" models
+  will blow it — pick a model that answers fast.
+- **Typesense must be able to reach the LLM endpoint.** Typesense runs in a container:
+  `localhost`/`host.docker.internal` point at *itself* (or get blocked by the host
+  firewall). With a remote provider this is a non-issue — just use its public URL.
+- The app recreates the Typesense conversation model automatically whenever you change
+  `NUXT_LLM_MODEL`/`NUXT_LLM_URL`.
+
+## How content works
+
+```
+content/
+├── recipes/
+│   ├── paella.md                 → /wiki/recipes/paella   (page)
+│   ├── notes.txt                 → document, listed under recipes/ and indexed
+│   └── plans/                    → folder (even when empty: it shows in the tree)
+└── genealogy/grandparents.md     → /wiki/genealogy/grandparents
+```
+
+- **Tree follows folders.** Every folder (`/wiki/recipes`, `/wiki`, …) opens a generated
+  folder page: a summary of its pages, subfolders and documents, plus an **Ask this
+  folder** button that scopes the RAG chat to that folder (the wiki root scopes to
+  everything). Every `.md` file is a page (including `index.md`, which has no special
+  meaning), every other file is a document; folders are never pages. Empty folders are
+  listed too — create them with the **New folder** button on any folder page.
+- **Frontmatter:** `title`, `description`, `order` (sorting in the tree).
+- **Editing:** there is no separate edit mode — every page opens directly in an inline
+  [Crepe](https://milkdown.dev/docs/guide/using-crepe) WYSIWYG markdown editor (Milkdown)
+  styled like the rendered page, with **auto-save** (~1.5s after the last change). Title
+  and description are edited as borderless fields in the page header; every other
+  frontmatter key in the file is preserved on save. **Images pasted or dropped into the
+  editor are embedded in the markdown as base64 data URLs** (no upload, no extra files).
+  Hand-editing files on disk works too; a dev watcher re-indexes changes within ~1s.
+- **Files (documents):** files live anywhere in the content tree — there is no
+  "attachment" concept, they belong to their folder and are never tied to a page.
+  Text is extracted (`unpdf` for PDF, `mammoth` for docx), chunked (~1200 chars,
+  overlapping), embedded and indexed — searchable, quotable by the chat, and listed in
+  the sidebar and folder pages. Clicking one opens it in a viewer modal (inline preview
+  for PDF/images/text, download otherwise). Hand-editing files on disk works; a dev
+  watcher re-indexes changes within ~1s.
+- **Moving things around:** pages, folders and files can be **moved from the UI**
+  (hover a tree entry or use the Move button on pages/folders). Moving a page moves its
+  `.md`; moving a folder moves everything inside it (nested pages and files follow);
+  the target folder is created if missing, name collisions are refused.
+- **Images in markdown:** reference content files as `/api/raw/<content path>`
+  (requires a logged-in session).
+
+## Indexing & search
+
+- On boot the server ensures Typesense collections (`wiki_pages`, `wiki_chunks`,
+  `conversation_store`) and the conversation model exist (idempotent, retried every 30s
+  if Typesense/LLM are down), then runs a **hash-diff sync** (content hash in SQLite vs
+  disk). Also triggered by the dev watcher, after every save/move/delete, and from the
+  user menu → *Re-index wiki* (`POST /api/admin/sync`).
+- **Search** (`GET /api/search?q=`) is hybrid — typo-tolerant lexical + semantic embedding —
+  across pages and document chunks, with highlighted snippets. ⌘K opens it anywhere.
+  Quality rules:
+  - **lexical hits are the signal:** when a query matches text directly, only those
+    hits are returned — weak vector-only neighbors are dropped as noise;
+  - semantic hits are only a fallback when nothing matched lexically, and only
+    within `NUXT_SEARCH_VECTOR_THRESHOLD` (0.4, calibrated for bge-family
+    multilingual models);
+  - several matching chunks of the **same document collapse into one result**
+    (with a "N passages" badge);
+  - chunk content is indexed with **infix** search as a fallback, so queries still match
+    inside words glued together by broken PDF text layers ("dudocument" → "document").
+    Glyph-spaced extractions ("N u m é r o") are normalized at extraction time.
+- **Recommended for non-English content:** use multilingual embeddings from an
+  OpenAI-compatible provider, e.g. set `NUXT_EMBEDDING_MODEL=<model>`,
+  `NUXT_EMBEDDING_URL=<your-provider>/v1`, `NUXT_EMBEDDING_API_KEY=<your-key>`.
+  The collections are recreated and reindexed automatically when the embedding
+  model changes.
+- **Chat** (`POST /api/chat`) uses Typesense's built-in RAG: retrieval from both
+  collections + your LLM, answering strictly from context with source links. Conversations
+  are multi-turn (history stored in Typesense, 24h TTL).
+
+## Auth
+
+Email/password (argon2), session cookies in SQLite. First registered user = admin,
+the rest are members. All content endpoints require a session — nothing is public.
+
+## Production
+
+```bash
+npm run build
+node .output/server/index.mjs      # or: docker build --target production .
+```
+
+Persist `content/` (or mount it wherever and set `NUXT_CONTENT_DIR`) and `data/`
+(SQLite + sessions). Set the `NUXT_*` env vars as above. Run migrations with
+`npm run db:migrate` (the server also auto-migrates if it finds the migrations folder).
+If Typesense runs remote/HTTPS, set `NUXT_TYPESENSE_URL` accordingly.

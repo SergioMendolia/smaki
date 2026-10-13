@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+@plugin "@tailwindcss/typography";
+
+/* --- crepe editor (milkdown): mapped onto the Nuxt UI theme --- */
+.crepe-wrapper .milkdown {
+  /* palette: --ui-* tokens flip automatically with color mode */
+  --crepe-color-background: var(--ui-bg);
+  --crepe-color-on-background: var(--ui-text);
+  --crepe-color-surface: var(--ui-bg-muted);
+  --crepe-color-surface-low: var(--ui-bg-elevated);
+  --crepe-color-on-surface: var(--ui-text-highlighted);
+  --crepe-color-on-surface-variant: var(--ui-text-muted);
+  --crepe-color-outline: var(--ui-border);
+  --crepe-color-primary: var(--ui-primary);
+  --crepe-color-secondary: var(--ui-bg-accented);
+  --crepe-color-on-secondary: var(--ui-text-highlighted);
+  --crepe-color-inverse: var(--ui-bg-inverted);
+  --crepe-color-on-inverse: var(--ui-text-inverted);
+  --crepe-color-inline-code: var(--ui-text);
+  --crepe-color-error: var(--ui-error);
+  --crepe-color-hover: var(--ui-bg-accented);
+  --crepe-color-selected: var(--ui-bg-accented);
+  --crepe-color-inline-area: var(--ui-border-muted);
+
+  /* typography: same stack and sizes as the rest of the app */
+  --crepe-font-default: inherit;
+  --crepe-font-title: inherit;
+  --crepe-font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+
+  font-family: inherit;
+  color: var(--ui-text);
+  background: transparent;
+  min-height: 50vh;
+}
+
+/* editor content flows like prose, not a padded "document" */
+.crepe-wrapper .milkdown .ProseMirror {
+  padding: 0;
+  line-height: 1.75;
+}
+
+.crepe-wrapper .milkdown .ProseMirror h1,
+.crepe-wrapper .milkdown .ProseMirror h2,
+.crepe-wrapper .milkdown .ProseMirror h3,
+.crepe-wrapper .milkdown .ProseMirror h4,
+.crepe-wrapper .milkdown .ProseMirror h5,
+.crepe-wrapper .milkdown .ProseMirror h6 {
+  font-family: inherit;
+  font-weight: 700;
+}
+
+/* prose-like heading scale */
+.crepe-wrapper .milkdown .ProseMirror h1 { font-size: 2.25em; line-height: 1.1; }
+.crepe-wrapper .milkdown .ProseMirror h2 { font-size: 1.5em; line-height: 1.33; }
+.crepe-wrapper .milkdown .ProseMirror h3 { font-size: 1.25em; line-height: 1.4; }
+.crepe-wrapper .milkdown .ProseMirror h4 { font-size: 1em; line-height: 1.5; }
+.crepe-wrapper .milkdown .ProseMirror h5 { font-size: 0.875em; line-height: 1.57; }
+.crepe-wrapper .milkdown .ProseMirror h6 { font-size: 0.75em; line-height: 1.66; }
+
+.crepe-wrapper .milkdown .ProseMirror p {
+  line-height: 1.75;
+}
+
+/* inline code like the app's prose: neutral text on a muted chip */
+.crepe-wrapper .milkdown .ProseMirror code {
+  color: var(--ui-text-highlighted);
+  background: var(--ui-bg-muted);
+}
+
+.crepe-wrapper .milkdown .ProseMirror pre {
+  background: var(--ui-bg-muted);
+}
