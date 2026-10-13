@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "rangeStrategy": "bump",
+  "schedule": ["before 6am on Monday"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on Monday"]
+  },
+  "automerge": true,
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "nuxt majors can be breaking for app/ and server/ — automerge disabled for these",
+      "matchPackageNames": ["nuxt", "nitropack"],
+      "rangeStrategy": "replace",
+      "automerge": false
+    }
+  ]
+}
