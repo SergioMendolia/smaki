@@ -4,7 +4,7 @@ A self-hosted family wiki: markdown pages on disk, hybrid full-text + semantic s
 pages **and** documents (PDF, docx…), and a RAG chat that answers questions from
 your content with source links.
 
-**Stack:** Nuxt 4 + Nitro · Nuxt UI v4 + Tailwind v4 · Pinia · Typesense (search + built-in RAG) ·
+**Stack:** Nuxt 4 + Nitro · Nuxt UI v4 + Tailwind v4 · Pinia · Typesense (search) ·
 SQLite + Drizzle · markdown with frontmatter on the filesystem.
 
 ## Quick start (dev)
@@ -28,7 +28,7 @@ The full stack (typesense + app in a container) runs with a plain
 | Variable | Meaning |
 | --- | --- |
 | `NUXT_TYPESENSE_URL` / `NUXT_TYPESENSE_API_KEY` | Typesense endpoint and key (also used by the container via `TYPESENSE_API_KEY`) |
-| `NUXT_LLM_URL` | OpenAI-compatible chat endpoint used for RAG answers. Pick a model that answers within Typesense's hard 60s LLM timeout |
+| `NUXT_LLM_URL` | OpenAI-compatible chat endpoint used for RAG answers (`/v1` may be included or not — the app tries both). The model just needs to answer within the app's 5-minute request timeout |
 | `NUXT_LLM_MODEL` | plain model name — Typesense routes via the `openai/` prefix internally and **strips it before calling your endpoint**. Leave empty to disable chat (search still works) |
 | `NUXT_LLM_API_KEY` | your key for the LLM provider |
 | `NUXT_EMBEDDING_MODEL` | default `ts/e5-small` (built-in, runs inside Typesense, no API key). For OpenAI-compatible embeddings add `NUXT_EMBEDDING_URL` (+ `NUXT_EMBEDDING_API_KEY`) |
@@ -38,15 +38,12 @@ The full stack (typesense + app in a container) runs with a plain
 
 ### Things worth knowing (learned the hard way)
 
-- **Typesense validates the LLM at conversation-model creation** — your LLM provider must
-  be reachable *before* the app boots (or before its next 30s bootstrap retry).
-- **Typesense enforces a hard 60s timeout per LLM call.** Verbose "thinking" models
-  will blow it — pick a model that answers fast.
-- **Typesense must be able to reach the LLM endpoint.** Typesense runs in a container:
-  `localhost`/`host.docker.internal` point at *itself* (or get blocked by the host
-  firewall). With a remote provider this is a non-issue — just use its public URL.
-- The app recreates the Typesense conversation model automatically whenever you change
-  `NUXT_LLM_MODEL`/`NUXT_LLM_URL`.
+- **The app calls the LLM itself for RAG** — Typesense only does retrieval. The LLM
+  endpoint must be reachable *from the app* (`localhost` is fine now; it no longer
+  needs to be reachable from inside the Typesense container).
+- **Chat history lives in the browser** — the chat store sends the last 10 turns with
+  each request; nothing is stored server-side, so reloading the page resets the
+  conversation.
 
 ## How content works
 
@@ -89,11 +86,11 @@ content/
 
 ## Indexing & search
 
-- On boot the server ensures Typesense collections (`wiki_pages`, `wiki_chunks`,
-  `conversation_store`) and the conversation model exist (idempotent, retried every 30s
-  if Typesense/LLM are down), then runs a **hash-diff sync** (content hash in SQLite vs
-  disk). Also triggered by the dev watcher, after every save/move/delete, and from the
-  user menu → *Re-index wiki* (`POST /api/admin/sync`).
+- On boot the server ensures the Typesense collections (`wiki_pages`, `wiki_chunks`)
+  exist (idempotent, retried every 30s if Typesense is down), then runs a
+  **hash-diff sync** (content hash in SQLite vs disk). Also triggered by the dev watcher,
+  after every save/move/delete, and from the user menu → *Re-index wiki*
+  (`POST /api/admin/sync`).
 - **Search** (`GET /api/search?q=`) is hybrid — typo-tolerant lexical + semantic embedding —
   across pages and document chunks, with highlighted snippets. ⌘K opens it anywhere.
   Quality rules:
@@ -112,9 +109,13 @@ content/
   `NUXT_EMBEDDING_URL=<your-provider>/v1`, `NUXT_EMBEDDING_API_KEY=<your-key>`.
   The collections are recreated and reindexed automatically when the embedding
   model changes.
-- **Chat** (`POST /api/chat`) uses Typesense's built-in RAG: retrieval from both
-  collections + your LLM, answering strictly from context with source links. Conversations
-  are multi-turn (history stored in Typesense, 24h TTL).
+- **Chat** (`POST /api/chat`) orchestrates RAG in the app: on follow-up questions the
+  LLM first rewrites the question into a standalone query using the conversation
+  history, retrieval then runs the same hybrid search over both collections, and the
+  LLM answers strictly from the assembled context in a warm, conversational style.
+  Any citation markers are stripped from the answer text — sources are shown
+  separately as clickable links. Conversations are multi-turn; the history is kept
+  in the browser and sent with each request.
 
 ## Auth
 

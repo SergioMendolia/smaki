@@ -19,7 +19,7 @@ export function useTypesense(): Client {
       }
     ],
     apiKey: config.typesenseApiKey,
-    // generous timeout: conversational search waits for the LLM to generate
+    // generous timeout: RAG retrieval + bulk imports may take a while
     connectionTimeoutSeconds: 180,
     retryIntervalSeconds: 2
   }) as unknown as Client

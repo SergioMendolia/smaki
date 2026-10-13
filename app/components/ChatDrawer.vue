@@ -24,6 +24,15 @@ watch(
 function sourceLink(path: string) {
   return `/wiki/${path}`
 }
+
+// collapsed by default, per-message index
+const openSources = ref(new Set<number>())
+function toggleSources(i: number) {
+  const next = new Set(openSources.value)
+  if (next.has(i)) next.delete(i)
+  else next.add(i)
+  openSources.value = next
+}
 </script>
 
 <template>
@@ -65,21 +74,33 @@ function sourceLink(path: string) {
             :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
           >
             <div
-              class="max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
-              :class="message.role === 'user' ? 'bg-primary text-inverted' : 'bg-elevated'"
+              class="max-w-[85%] rounded-lg px-3 py-2 text-sm"
+              :class="message.role === 'user' ? 'whitespace-pre-wrap bg-primary text-inverted' : 'bg-elevated'"
             >
-              {{ message.text }}
-              <div v-if="message.sources?.length" class="mt-2 flex flex-wrap gap-1">
-                <UBadge
-                  v-for="source in message.sources"
-                  :key="source.type + source.path + (source.filename ?? '')"
+              <div v-if="message.html" class="chat-md" v-html="message.html" />
+              <template v-else>{{ message.text }}</template>
+              <div v-if="message.sources?.length" class="mt-2">
+                <UButton
+                  size="xs"
                   color="neutral"
-                  variant="subtle"
-                  class="cursor-pointer"
-                  @click="navigateTo(sourceLink(source.path))"
-                >
-                  {{ source.type === 'page' ? source.title || source.path : source.filename }}
-                </UBadge>
+                  variant="ghost"
+                  :icon="openSources.has(i) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                  :label="`Sources (${message.sources.length})`"
+                  :ui="{ label: 'text-dimmed' }"
+                  @click="toggleSources(i)"
+                />
+                <div v-show="openSources.has(i)" class="mt-1 flex flex-wrap gap-1">
+                  <UBadge
+                    v-for="source in message.sources"
+                    :key="source.type + source.path + (source.filename ?? '')"
+                    color="neutral"
+                    variant="subtle"
+                    class="cursor-pointer"
+                    @click="navigateTo(sourceLink(source.path))"
+                  >
+                    {{ source.type === 'page' ? source.title || source.path : source.filename }}
+                  </UBadge>
+                </div>
               </div>
             </div>
           </div>

@@ -10,6 +10,8 @@ export interface ChatSource {
 export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
+  /** markdown-rendered answer (assistant messages) */
+  html?: string
   sources?: ChatSource[]
 }
 
@@ -17,7 +19,6 @@ export const useChatStore = defineStore('chat', () => {
   const open = ref(false)
   const busy = ref(false)
   const messages = ref<ChatMessage[]>([])
-  const conversationId = ref<string | null>(null)
   // folder scope: retrieval restricted to this folder ('' = whole wiki)
   const scope = ref('')
   const scopeLabel = ref('')
@@ -28,15 +29,20 @@ export const useChatStore = defineStore('chat', () => {
     busy.value = true
     messages.value.push({ role: 'user', text })
     try {
-      const res = await $fetch<{ answer: string, conversation_id: string, sources: ChatSource[] }>(
+      const res = await $fetch<{ answer: string, answer_html: string, sources: ChatSource[] }>(
         '/api/chat',
         {
           method: 'POST',
-          body: { q: text, conversation_id: conversationId.value, scope: scope.value }
+          body: {
+            q: text,
+            scope: scope.value,
+            // previous turns (everything except the question just pushed) —
+            // used server-side for query rewriting and as LLM chat context
+            history: messages.value.slice(0, -1).slice(-10).map(m => ({ role: m.role, text: m.text }))
+          }
         }
       )
-      conversationId.value = res.conversation_id || null
-      messages.value.push({ role: 'assistant', text: res.answer, sources: res.sources })
+      messages.value.push({ role: 'assistant', text: res.answer, html: res.answer_html, sources: res.sources })
     } catch (error: any) {
       messages.value.push({
         role: 'assistant',
@@ -49,7 +55,6 @@ export const useChatStore = defineStore('chat', () => {
 
   function reset() {
     messages.value = []
-    conversationId.value = null
   }
 
   function setScope(path: string, label: string) {
@@ -82,5 +87,5 @@ export const useChatStore = defineStore('chat', () => {
     open.value = v ?? !open.value
   }
 
-  return { open, busy, messages, conversationId, scope, scopeLabel, ask, reset, setScope, openGlobal, openFolder, toggleDrawer }
+  return { open, busy, messages, scope, scopeLabel, ask, reset, setScope, openGlobal, openFolder, toggleDrawer }
 })
