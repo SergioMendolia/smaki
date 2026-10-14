@@ -35,6 +35,8 @@ The full stack (typesense + app in a container) runs with a plain
 | `NUXT_PDF_VISION` | global default for VLM description of PDF pages (default `false` — text layer only); override per document from its document page (admin). See *Indexing & search* → *Optional PDF vision indexing* |
 | `NUXT_PDF_VISION_MAX_PAGES` | pages described per PDF when vision indexing is on (default `20`) |
 | `NUXT_VLM_URL` / `NUXT_VLM_MODEL` / `NUXT_VLM_API_KEY` | the vision model, fully separate from the conversational LLM: any OpenAI-compatible endpoint with image input (e.g. Infomaniak AI's Kimi, Apertus or Ministral). Required when `NUXT_PDF_VISION=true` |
+| `NUXT_ALLOWED_HOSTS` | production: hostnames the server accepts (Host header check; unset = allow all). Comma-separated, port ignored; `.example.com` covers all subdomains |
+| `NUXT_SECURE_COOKIES` | production: `true` marks session cookies as Secure — set when serving over HTTPS |
 
 ⚠️ Switching embedding models requires recreating the Typesense collections
 (delete them or `docker compose down -v` — they are rebuilt automatically at next boot).
@@ -149,12 +151,59 @@ session — nothing is public.
 
 ## Production
 
+CI (`.github/workflows/docker.yml`) builds the production image on every push to
+`main` (and on `v*` tags) and pushes it to GHCR as
+`ghcr.io/sergiomendolia/smaki` (`latest`, `vX.Y.Z`, commit SHA; amd64 + arm64).
+PRs only build, without pushing.
+
+On the server you need **only Docker + two files** — no git checkout, no Node:
+
 ```bash
-npm run build
-node .output/server/index.mjs      # or: docker build --target production .
+mkdir smaki && cd smaki
+curl -fLO https://raw.githubusercontent.com/SergioMendolia/smaki/main/docker-compose.prod.yml
+curl -fLO https://raw.githubusercontent.com/SergioMendolia/smaki/main/.env.example
+mv .env.example .env        # then edit it (see below)
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-Persist `content/` (or mount it wherever and set `NUXT_CONTENT_DIR`) and `data/`
-(SQLite + sessions). Set the `NUXT_*` env vars as above. Run migrations with
-`npm run db:migrate` (the server also auto-migrates if it finds the migrations folder).
-If Typesense runs remote/HTTPS, set `NUXT_TYPESENSE_URL` accordingly.
+The first login is `admin` / `SmakiAdmin` — change the password immediately.
+
+### What to set in `.env`
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `TYPESENSE_API_KEY` | ✅ | random string; used by the Typesense container **and** the app (`NUXT_TYPESENSE_API_KEY` in `.env.example` must match it) |
+| `NUXT_ALLOWED_HOSTS` | ✅ | your domain, e.g. `wiki.example.com` (or `.example.com` for all subdomains) — requests with any other Host header are rejected. Don't skip this: Nitro itself does no host validation |
+| `NUXT_SECURE_COOKIES` | ✅ | set `true` — session cookies get the `Secure` flag behind HTTPS |
+| `NUXT_LLM_URL` / `NUXT_LLM_MODEL` / `NUXT_LLM_API_KEY` | optional | RAG chat + AI editing; without them search still works. The endpoint must be reachable from the app container |
+| `NUXT_EMBEDDING_*` | optional | defaults to Typesense's built-in `ts/e5-small`; use an external multilingual model for non-English content (see *Indexing & search*) |
+| `NUXT_PDF_VISION` + `NUXT_VLM_*` | optional | vision indexing of PDF pages, off by default |
+
+The compose file already points `NUXT_TYPESENSE_URL` at the Typesense container
+and overrides the `.env` value — don't set it.
+
+### Layout & TLS
+
+- `./content/` (wiki markdown + documents) and `./data/` (SQLite, sessions)
+  are mounted; everything is edited through the UI. The image's baked-in
+  content is only a bootstrap and is shadowed by the mount.
+- The app port is published on **localhost only** (`127.0.0.1:3000`) — put a
+  reverse proxy (caddy, nginx, traefik…) in front for TLS and hostname routing.
+- Typesense is not exposed at all; it lives on the compose network.
+
+### Upgrades
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Migrations run automatically at boot; `content/` and `data/` survive upgrades.
+⚠️ Switching embedding models still requires recreating the Typesense
+collections (`docker compose -f docker-compose.prod.yml down -v` drops them —
+they are rebuilt at next boot).
+
+If you prefer building locally instead: `npm run build` +
+`node .output/server/index.mjs`, or `docker build --target production .` — same
+env vars and persistence rules apply (`content/` or `NUXT_CONTENT_DIR`, and
+`data/` for SQLite).

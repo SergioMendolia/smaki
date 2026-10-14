@@ -64,7 +64,7 @@ export async function createSession(event: H3Event, userId: string) {
     sameSite: 'lax',
     path: '/',
     maxAge: SESSION_TTL_DAYS * 86400,
-    secure: false
+    secure: !!useRuntimeConfig().secureCookies
   })
   return token
 }
