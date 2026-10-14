@@ -7,8 +7,7 @@ export default defineEventHandler(async (event) => {
   const users = useDb()
     .select({
       id: tables.users.id,
-      email: tables.users.email,
-      name: tables.users.name,
+      username: tables.users.username,
       role: tables.users.role,
       createdAt: tables.users.createdAt
     })

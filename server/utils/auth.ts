@@ -9,9 +9,19 @@ const SESSION_TTL_DAYS = 30
 
 export interface SessionUser {
   id: string
-  email: string
-  name: string
+  username: string
   role: 'admin' | 'member'
+}
+
+export const USERNAME_RE = /^[a-z0-9._-]{3,32}$/
+
+/** normalize + validate a username; throws a 400 h3 error when invalid */
+export function normalizeUsername(raw: string | undefined): string {
+  const username = raw?.trim().toLowerCase() ?? ''
+  if (!USERNAME_RE.test(username)) {
+    throw createError({ statusCode: 400, statusMessage: 'Username must be 3–32 characters (letters, numbers, . _ -)' })
+  }
+  return username
 }
 
 export async function hashPassword(password: string) {

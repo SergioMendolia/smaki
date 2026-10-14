@@ -19,7 +19,7 @@ watch(
 )
 
 const userMenu = computed(() => [
-  [{ label: auth.user?.name ?? '', disabled: true }],
+  [{ label: auth.user?.username ?? '', disabled: true }],
   [
     ...(auth.user?.role === 'admin'
       ? [
@@ -66,7 +66,7 @@ const userMenu = computed(() => [
             @click="chat.openGlobal()"
           />
           <UDropdownMenu v-if="auth.user" :items="userMenu">
-            <UButton color="neutral" variant="ghost" icon="i-lucide-user" :label="auth.user.name" />
+            <UButton color="neutral" variant="ghost" icon="i-lucide-user" :label="auth.user.username" />
           </UDropdownMenu>
         </div>
       </div>

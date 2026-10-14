@@ -3,8 +3,7 @@ import { useAuthStore } from '~/stores/auth'
 
 interface AdminUser {
   id: string
-  email: string
-  name: string
+  username: string
   role: 'admin' | 'member'
   createdAt: string
   lastAdmin: boolean
@@ -35,18 +34,18 @@ const me = computed(() => auth.user)
 // --- user form (create + edit) ---
 const formOpen = ref(false)
 const editing = ref<AdminUser | null>(null)
-const form = reactive({ email: '', name: '', password: '', role: 'member' as 'admin' | 'member' })
+const form = reactive({ username: '', password: '', role: 'member' as 'admin' | 'member' })
 const formBusy = ref(false)
 
 function openCreate() {
   editing.value = null
-  Object.assign(form, { email: '', name: '', password: '', role: 'member' })
+  Object.assign(form, { username: '', password: '', role: 'member' })
   formOpen.value = true
 }
 
 function openEdit(user: AdminUser) {
   editing.value = user
-  Object.assign(form, { email: user.email, name: user.name, password: '', role: user.role })
+  Object.assign(form, { username: user.username, password: '', role: user.role })
   formOpen.value = true
 }
 
@@ -56,7 +55,7 @@ async function submitForm() {
     if (editing.value) {
       await $fetch(`/api/admin/users/${editing.value.id}`, {
         method: 'PUT',
-        body: { name: form.name, role: form.role, ...(form.password ? { password: form.password } : {}) }
+        body: { username: form.username, role: form.role, ...(form.password ? { password: form.password } : {}) }
       })
       toast.add({ title: 'User updated' })
     } else {
@@ -76,7 +75,7 @@ async function submitForm() {
 }
 
 async function removeUser(user: AdminUser) {
-  if (!confirm(`Delete “${user.name}” (${user.email})? Their account and sessions will be removed.`)) return
+  if (!confirm(`Delete “${user.username}”? Their account and sessions will be removed.`)) return
   try {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' })
     toast.add({ title: 'User deleted' })
@@ -271,19 +270,18 @@ async function openChunks(file: IndexedFileRow) {
         <li v-for="user in users" :key="user.id" class="flex items-center gap-3 py-2.5">
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-2 text-sm font-medium">
-              {{ user.name }}
+              {{ user.username }}
               <UBadge :color="user.role === 'admin' ? 'primary' : 'neutral'" variant="subtle" size="sm">
                 {{ user.role }}
               </UBadge>
               <span v-if="user.id === me?.id" class="text-xs text-muted">(you)</span>
             </p>
-            <p class="truncate text-xs text-muted">{{ user.email }}</p>
           </div>
           <UButton
             size="xs"
             variant="ghost"
             icon="i-lucide-pencil"
-            :aria-label="`Edit ${user.name}`"
+            :aria-label="`Edit ${user.username}`"
             @click="openEdit(user)"
           />
           <UButton
@@ -291,7 +289,7 @@ async function openChunks(file: IndexedFileRow) {
             variant="ghost"
             color="error"
             icon="i-lucide-trash-2"
-            :aria-label="`Delete ${user.name}`"
+            :aria-label="`Delete ${user.username}`"
             :disabled="user.id === me?.id || user.lastAdmin"
             @click="removeUser(user)"
           />
@@ -525,13 +523,10 @@ async function openChunks(file: IndexedFileRow) {
     <UModal :open="formOpen" @update:open="formOpen = $event">
       <template #content>
         <form class="p-6" @submit.prevent="submitForm">
-          <h2 class="text-lg font-semibold">{{ editing ? `Edit ${editing.name}` : 'Add user' }}</h2>
+          <h2 class="text-lg font-semibold">{{ editing ? `Edit ${editing.username}` : 'Add user' }}</h2>
           <div class="mt-4 space-y-3">
-            <UFormField v-if="!editing" label="Email" required>
-              <UInput v-model="form.email" type="email" class="w-full" autofocus required />
-            </UFormField>
-            <UFormField label="Name" required>
-              <UInput v-model="form.name" class="w-full" required />
+            <UFormField label="Username" required hint="3–32 characters: letters, numbers, . _ -">
+              <UInput v-model="form.username" class="w-full" autofocus required />
             </UFormField>
             <UFormField :label="editing ? 'New password (leave empty to keep)' : 'Password'" :required="!editing">
               <UInput v-model="form.password" type="password" class="w-full" :required="!editing" minlength="8" />

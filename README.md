@@ -139,8 +139,13 @@ content/
 
 ## Auth
 
-Email/password (argon2), session cookies in SQLite. First registered user = admin,
-the rest are members. All content endpoints require a session — nothing is public.
+Username/password (argon2), session cookies in SQLite. On first boot a default admin
+account is created: username `admin`, password `SmakiAdmin` — change the password
+after the first login. There is no self-registration; admins create users (with
+username and role) in the Administration page, and can change usernames, passwords
+and roles at any time. Usernames are 3–32 characters (letters, numbers, `.`, `_`,
+`-`), passwords must be at least 8 characters. All content endpoints require a
+session — nothing is public.
 
 ## Production
 

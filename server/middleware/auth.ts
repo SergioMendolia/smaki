@@ -16,8 +16,7 @@ export default defineEventHandler(async (event) => {
   if (row) {
     (event.context as Record<string, unknown>).user = {
       id: row.users.id,
-      email: row.users.email,
-      name: row.users.name,
+      username: row.users.username,
       role: row.users.role
     }
   } else {
