@@ -12,6 +12,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# content/ is gitignored (lives on the server) — make sure the dir exists so
+# the production stage can copy it as an empty bootstrap
+RUN mkdir -p content
 RUN npm run build
 
 # --- production ---
