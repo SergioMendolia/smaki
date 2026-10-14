@@ -6,6 +6,7 @@ import { CHUNKS_COLLECTION, PAGES_COLLECTION } from './bootstrap'
 import { contentRoot, pagePlainText, walkContent, type PageMeta } from './content'
 import { tables, useDb } from './db'
 import { chunkText, extractTextFromFile, mimeFor } from './text'
+import { describePdf, pdfVisionEnabled, type PdfPageDescription } from './vision'
 
 function md5(input: string | Buffer): string {
   return crypto.createHash('md5').update(input).digest('hex')
@@ -47,8 +48,41 @@ export async function deletePageDoc(pagePath: string): Promise<void> {
     .run()
 }
 
+interface BuiltChunk {
+  content: string
+  kind: 'text' | 'vision'
+  page?: number
+}
+
+/** cached VLM descriptions for this file version, or null when not cached */
+function cachedDescriptions(fileId: string, hash: string): PdfPageDescription[] | null {
+  const row = useDb()
+    .select()
+    .from(tables.visionDescriptions)
+    .where(eq(tables.visionDescriptions.file_id, fileId))
+    .get()
+  if (!row || row.hash !== hash) return null
+  try {
+    return JSON.parse(row.pages) as PdfPageDescription[]
+  } catch {
+    return null
+  }
+}
+
+function cacheDescriptions(fileId: string, hash: string, pages: PdfPageDescription[]): void {
+  const db = useDb()
+  const row = { file_id: fileId, hash, pages: JSON.stringify(pages) }
+  db.insert(tables.visionDescriptions)
+    .values(row)
+    .onConflictDoUpdate({ target: tables.visionDescriptions.file_id, set: row })
+    .run()
+}
+
 /** extract text from a content file, chunk it and index the chunks into typesense */
-export async function indexFile(rel: string) {
+export async function indexFile(
+  rel: string,
+  onProgress?: (message: string) => void
+) {
   const db = useDb()
   const client = useTypesense()
   const abs = contentRoot() + '/' + rel
@@ -56,9 +90,51 @@ export async function indexFile(rel: string) {
   const hash = md5(buffer)
   const filename = path.basename(rel)
   const dir = path.dirname(rel) === '.' ? '' : path.dirname(rel)
-  const text = await extractTextFromFile(buffer, filename)
-  const chunks = text.trim() ? chunkText(text) : [filename]
   const id = md5(rel)
+  const existing = db.select().from(tables.files).where(eq(tables.files.id, id)).get()
+
+  const text = await extractTextFromFile(buffer, filename)
+  const chunks: BuiltChunk[] = (text.trim() ? chunkText(text) : []).map(content => ({
+    content,
+    kind: 'text' as const
+  }))
+
+  // per-document override of the global pdf vision setting
+  const visionOn =
+    existing?.vision === 1 || (existing?.vision == null && pdfVisionEnabled())
+  if (visionOn && path.extname(filename).toLowerCase() === '.pdf') {
+    try {
+      let descriptions = cachedDescriptions(id, hash)
+      if (!descriptions) {
+        const maxPages = Number(useRuntimeConfig().pdfVisionMaxPages) || 20
+        descriptions = await describePdf(buffer, maxPages, (page, total) =>
+          onProgress?.(`describing page ${page}/${total}`)
+        )
+        cacheDescriptions(id, hash, descriptions)
+      }
+      for (const d of descriptions) {
+        chunks.push({ content: `Page ${d.page} (visual content): ${d.description}`, kind: 'vision', page: d.page })
+      }
+    } catch (error) {
+      console.error('[smaki] PDF vision indexing failed for', rel, error)
+    }
+  }
+  if (!chunks.length) chunks.push({ content: filename, kind: 'text' })
+
+  // persist the chunks (source of truth for the chunk viewers)
+  db.delete(tables.fileChunks).where(eq(tables.fileChunks.file_id, id)).run()
+  db.insert(tables.fileChunks)
+    .values(
+      chunks.map((chunk, i) => ({
+        id: md5(`${id}:${i}`),
+        file_id: id,
+        chunk_index: i,
+        content: chunk.content,
+        kind: chunk.kind,
+        page: chunk.page ?? null
+      }))
+    )
+    .run()
 
   await client
     .collections(CHUNKS_COLLECTION)
@@ -66,13 +142,13 @@ export async function indexFile(rel: string) {
     .delete({ filter_by: `file_id:=${id}` } as never)
     .catch(() => {})
 
-  const docs = chunks.map((content, i) => ({
+  const docs = chunks.map((chunk, i) => ({
     id: md5(`${id}:${i}`),
     file_id: id,
     page_path: dir,
     filename,
     chunk_index: i,
-    content: content.slice(0, 8000)
+    content: chunk.content.slice(0, 8000)
   }))
   if (docs.length) {
     await client
@@ -88,7 +164,9 @@ export async function indexFile(rel: string) {
     mime: mimeFor(filename),
     size: buffer.length,
     hash,
-    extracted: text.trim().length > 0
+    extracted: text.trim().length > 0,
+    vision: existing?.vision ?? null,
+    indexedAt: new Date()
   }
   db.insert(tables.files)
     .values(row)
@@ -97,7 +175,7 @@ export async function indexFile(rel: string) {
   return row
 }
 
-/** delete chunks + db row + the file on disk */
+/** delete chunks + db rows + the file on disk */
 export async function removeFile(rel: string): Promise<void> {
   const db = useDb()
   const id = md5(rel)
@@ -106,9 +184,9 @@ export async function removeFile(rel: string): Promise<void> {
     .documents()
     .delete({ filter_by: `file_id:=${id}` } as never)
     .catch(() => {})
-  db.delete(tables.files)
-    .where(eq(tables.files.id, id))
-    .run()
+  db.delete(tables.files).where(eq(tables.files.id, id)).run()
+  db.delete(tables.fileChunks).where(eq(tables.fileChunks.file_id, id)).run()
+  db.delete(tables.visionDescriptions).where(eq(tables.visionDescriptions.file_id, id)).run()
   await fsp.rm(path.join(contentRoot(), rel), { force: true }).catch(() => {})
 }
 
@@ -122,8 +200,10 @@ export interface SyncStats {
 /**
  * full diff sync: walk the content dir, compare hashes with sqlite,
  * upsert changed pages/files in typesense, drop removed ones.
+ * `forceAll` reindexes every file (full reindex) while keeping the
+ * files table (per-document vision flags) intact.
  */
-export async function syncAll(): Promise<SyncStats> {
+export async function syncAll(forceAll = false): Promise<SyncStats> {
   const db = useDb()
   const { pages, files } = await walkContent()
 
@@ -149,6 +229,11 @@ export async function syncAll(): Promise<SyncStats> {
   // --- files ---
   const dbFiles = db.select().from(tables.files).all()
   const dbFileMap = new Map(dbFiles.map(r => [r.id, r]))
+  // files indexed before the chunk store existed have typesense chunks but no
+  // `file_chunks` rows — reindex them so the chunk viewers have content
+  const chunkedIds = new Set(
+    db.select({ file_id: tables.fileChunks.file_id }).from(tables.fileChunks).all().map(r => r.file_id)
+  )
   const fsRels = new Set(files.map(f => f.rel))
   let filesDeleted = 0
   for (const row of dbFiles) {
@@ -159,9 +244,9 @@ export async function syncAll(): Promise<SyncStats> {
         .documents()
         .delete({ filter_by: `file_id:=${row.id}` } as never)
         .catch(() => {})
-      db.delete(tables.files)
-        .where(eq(tables.files.id, row.id))
-        .run()
+      db.delete(tables.files).where(eq(tables.files.id, row.id)).run()
+      db.delete(tables.fileChunks).where(eq(tables.fileChunks.file_id, row.id)).run()
+      db.delete(tables.visionDescriptions).where(eq(tables.visionDescriptions.file_id, row.id)).run()
       filesDeleted++
     }
   }
@@ -170,8 +255,12 @@ export async function syncAll(): Promise<SyncStats> {
   for (const file of files) {
     const id = md5(file.rel)
     const existing = dbFileMap.get(id)
-    const fileHash = md5(await fsp.readFile(path.join(contentRoot(), file.rel)))
-    if (existing && existing.hash === fileHash) continue
+    if (
+      !forceAll &&
+      existing &&
+      existing.hash === md5(await fsp.readFile(path.join(contentRoot(), file.rel))) &&
+      chunkedIds.has(id)
+    ) continue
     await indexFile(file.rel)
     filesIndexed++
   }
@@ -180,8 +269,9 @@ export async function syncAll(): Promise<SyncStats> {
 }
 
 /**
- * forced full reindex: drop both wiki collections and all sync metadata,
- * then recreate (with the current embedding config) and rebuild from disk.
+ * forced full reindex: drop both wiki collections and rebuild everything from
+ * disk. Keeps the files table (per-document vision flags) and the cached VLM
+ * descriptions — only chunks and embeddings are rebuilt.
  */
 export async function fullReindex(): Promise<SyncStats> {
   const db = useDb()
@@ -190,7 +280,7 @@ export async function fullReindex(): Promise<SyncStats> {
     await client.collections(collection).delete().catch(() => {})
   }
   db.delete(tables.pages).run()
-  db.delete(tables.files).run()
+  db.delete(tables.fileChunks).run()
   await ensureTypesense()
-  return await syncAll()
+  return await syncAll(true)
 }

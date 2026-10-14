@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeLlmStream } from '../server/utils/llm'
+import { resolveLlmEndpoint, sanitizeLlmStream } from '../server/utils/llm'
 
 async function* fromChunks(chunks: string[]): AsyncGenerator<string> {
   for (const chunk of chunks) yield chunk
@@ -10,6 +10,32 @@ async function collect(gen: AsyncGenerator<string>): Promise<string> {
   for await (const chunk of gen) out += chunk
   return out
 }
+
+describe('resolveLlmEndpoint', () => {
+  it('falls back to the conversational LLM config without an override', () => {
+    const endpoint = resolveLlmEndpoint()
+    expect(endpoint.url).toBeUndefined()
+    expect(endpoint.model).toBeUndefined()
+  })
+
+  it('uses the override when a url is given, filling gaps', () => {
+    const endpoint = resolveLlmEndpoint({
+      url: 'https://ai.infomaniak.com/v1',
+      model: 'mistralai/Ministral-3-14B-Instruct-2512',
+      apiKey: 'secret'
+    })
+    expect(endpoint).toEqual({
+      url: 'https://ai.infomaniak.com/v1',
+      model: 'mistralai/Ministral-3-14B-Instruct-2512',
+      apiKey: 'secret'
+    })
+  })
+
+  it('keeps the override even without a model or key', () => {
+    const endpoint = resolveLlmEndpoint({ url: 'https://example.com' })
+    expect(endpoint).toEqual({ url: 'https://example.com', model: '', apiKey: '' })
+  })
+})
 
 describe('sanitizeLlmStream', () => {
   it('strips citation markers within a chunk', async () => {

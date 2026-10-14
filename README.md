@@ -32,6 +32,9 @@ The full stack (typesense + app in a container) runs with a plain
 | `NUXT_LLM_MODEL` | plain model name — Typesense routes via the `openai/` prefix internally and **strips it before calling your endpoint**. Leave empty to disable chat (search still works) |
 | `NUXT_LLM_API_KEY` | your key for the LLM provider |
 | `NUXT_EMBEDDING_MODEL` | default `ts/e5-small` (built-in, runs inside Typesense, no API key). For OpenAI-compatible embeddings add `NUXT_EMBEDDING_URL` (+ `NUXT_EMBEDDING_API_KEY`) |
+| `NUXT_PDF_VISION` | global default for VLM description of PDF pages (default `false` — text layer only); override per document from its document page (admin). See *Indexing & search* → *Optional PDF vision indexing* |
+| `NUXT_PDF_VISION_MAX_PAGES` | pages described per PDF when vision indexing is on (default `20`) |
+| `NUXT_VLM_URL` / `NUXT_VLM_MODEL` / `NUXT_VLM_API_KEY` | the vision model, fully separate from the conversational LLM: any OpenAI-compatible endpoint with image input (e.g. Infomaniak AI's Kimi, Apertus or Ministral). Required when `NUXT_PDF_VISION=true` |
 
 ⚠️ Switching embedding models requires recreating the Typesense collections
 (delete them or `docker compose down -v` — they are rebuilt automatically at next boot).
@@ -74,9 +77,10 @@ content/
   "attachment" concept, they belong to their folder and are never tied to a page.
   Text is extracted (`unpdf` for PDF, `mammoth` for docx), chunked (~1200 chars,
   overlapping), embedded and indexed — searchable, quotable by the chat, and listed in
-  the sidebar and folder pages. Clicking one opens it in a viewer modal (inline preview
-  for PDF/images/text, download otherwise). Hand-editing files on disk works; a dev
-  watcher re-indexes changes within ~1s.
+  the sidebar and folder pages. Clicking one opens the document's own page at its
+  content path (e.g. `/wiki/recipes/scan.pdf`) with inline preview, indexation
+  status, indexed chunks and — for admins — reindex and per-document PDF vision.
+  Hand-editing files on disk works; a dev watcher re-indexes changes within ~1s.
 - **Moving things around:** pages, folders and files can be **moved from the UI**
   (hover a tree entry or use the Move button on pages/folders). Moving a page moves its
   `.md`; moving a folder moves everything inside it (nested pages and files follow);
@@ -104,6 +108,17 @@ content/
   - chunk content is indexed with **infix** search as a fallback, so queries still match
     inside words glued together by broken PDF text layers ("dudocument" → "document").
     Glyph-spaced extractions ("N u m é r o") are normalized at extraction time.
+- **Optional PDF vision indexing:** with a vision-capable model configured
+  (`NUXT_VLM_URL` / `NUXT_VLM_MODEL` / `NUXT_VLM_API_KEY`, any OpenAI-compatible
+  endpoint with image input — separate from the conversational LLM), PDF pages can
+  additionally be rendered to images and described by the VLM (visible text, tables,
+  charts, diagrams, photos), making scans without a text layer searchable. By default
+  this is **off** (`NUXT_PDF_VISION=false`, text layer only) and can be switched on
+  **per document** from its document page (admin). Vision descriptions are cached in
+  SQLite per file hash — reindexes and embedding-model changes reuse them instead of
+  re-calling the VLM. Pages per PDF are capped at `NUXT_PDF_VISION_MAX_PAGES` (default
+  20). Indexed chunks are persisted in SQLite (`file_chunks`) and shown on the
+  document page and in the admin index overview.
 - **Recommended for non-English content:** use multilingual embeddings from an
   OpenAI-compatible provider, e.g. set `NUXT_EMBEDDING_MODEL=<model>`,
   `NUXT_EMBEDDING_URL=<your-provider>/v1`, `NUXT_EMBEDDING_API_KEY=<your-key>`.

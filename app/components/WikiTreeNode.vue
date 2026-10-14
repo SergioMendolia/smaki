@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TreeNode } from '~/stores/tree'
 
-const viewer = useFileViewer()
 const mover = useMove()
 
 const props = defineProps<{ node: TreeNode, depth: number }>()
@@ -13,6 +12,9 @@ const to = computed(() => `/wiki/${props.node.path}`)
 const parentPath = computed(() =>
   props.node.path.includes('/') ? props.node.path.slice(0, props.node.path.lastIndexOf('/')) : ''
 )
+const enc = (p: string) => p.split('/').filter(Boolean).map(encodeURIComponent).join('/')
+const docTo = (doc: { dir?: string, filename: string }) =>
+  `/wiki/${doc.dir ? enc(doc.dir) + '/' : ''}${enc(doc.filename)}`
 </script>
 
 <template>
@@ -57,9 +59,9 @@ const parentPath = computed(() =>
           :name="doc.mime.startsWith('image/') ? 'i-lucide-image' : 'i-lucide-file'"
           class="h-4 w-4 shrink-0 text-muted"
         />
-        <button type="button" class="truncate text-sm hover:text-primary" @click="viewer.open(doc)">
+        <NuxtLink :to="docTo(doc)" class="truncate text-sm hover:text-primary">
           {{ doc.filename }}
-        </button>
+        </NuxtLink>
         <button
           type="button"
           class="ms-auto hidden shrink-0 text-muted hover:text-primary group-hover:block"

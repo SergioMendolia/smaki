@@ -17,7 +17,7 @@ watch(
 function goTo(path: string) {
   if (!path && path !== '') return
   search.close()
-  navigateTo(`/wiki/${path}`)
+  navigateTo(`/wiki/${path.split('/').filter(Boolean).map(encodeURIComponent).join('/')}`)
 }
 
 onMounted(() => {
@@ -69,7 +69,7 @@ onMounted(() => {
               v-for="chunk in search.chunks"
               :key="chunk.id + chunk.filename"
               class="block w-full rounded px-2 py-1.5 text-left hover:bg-elevated"
-              @click="goTo(chunk.pagePath)"
+              @click="goTo(chunk.pagePath ? `${chunk.pagePath}/${chunk.filename}` : chunk.filename)"
             >
               <div class="flex items-center gap-2 text-sm font-medium">
                 <UIcon name="i-lucide-paperclip" class="h-4 w-4 shrink-0 text-muted" />

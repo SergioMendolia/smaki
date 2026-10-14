@@ -1,9 +1,36 @@
+export interface LlmImagePart {
+  type: 'image_url'
+  image_url: { url: string }
+}
+
+export interface LlmTextPart {
+  type: 'text'
+  text: string
+}
+
+export type LlmContentPart = LlmTextPart | LlmImagePart
+
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | LlmContentPart[]
+}
+
+/** alternative endpoint for a single call (e.g. the VLM) */
+export interface LlmEndpoint {
+  url: string
+  model: string
+  apiKey: string
 }
 
 const TIMEOUT_MS = 300_000
+
+export function resolveLlmEndpoint(override?: Partial<LlmEndpoint>): LlmEndpoint {
+  const config = useRuntimeConfig()
+  if (override?.url) {
+    return { url: override.url, model: override.model ?? '', apiKey: override.apiKey ?? '' }
+  }
+  return { url: config.llmUrl, model: config.llmModel, apiKey: config.llmApiKey }
+}
 
 function chatUrls(raw: string): string[] {
   const base = raw.replace(/\/+$/, '')
@@ -12,27 +39,31 @@ function chatUrls(raw: string): string[] {
   return urls
 }
 
-async function postChat(url: string, body: Record<string, unknown>): Promise<Response> {
-  const headers = llmHeaders()
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+async function postChat(
+  url: string,
+  body: Record<string, unknown>,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<Response> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`
+  let timer: NodeJS.Timeout | undefined
+  let requestSignal = signal
+  if (!requestSignal) {
+    const controller = new AbortController()
+    timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    requestSignal = controller.signal
+  }
   try {
     return await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: controller.signal
+      signal: requestSignal
     })
   } finally {
-    clearTimeout(timer)
+    if (timer) clearTimeout(timer)
   }
-}
-
-function llmHeaders(): Record<string, string> {
-  const config = useRuntimeConfig()
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (config.llmApiKey) headers.authorization = `Bearer ${config.llmApiKey}`
-  return headers
 }
 
 /**
@@ -41,24 +72,24 @@ function llmHeaders(): Record<string, string> {
  */
 export async function llmChat(
   messages: LlmMessage[],
-  opts: { maxTokens?: number } = {}
+  opts: { maxTokens?: number, endpoint?: Partial<LlmEndpoint> } = {}
 ): Promise<string> {
-  const config = useRuntimeConfig()
-  if (!config.llmUrl) {
-    throw createError({ statusCode: 500, statusMessage: 'NUXT_LLM_URL is not configured' })
+  const { url, model, apiKey } = resolveLlmEndpoint(opts.endpoint)
+  if (!url) {
+    throw createError({ statusCode: 500, statusMessage: 'no LLM URL is configured' })
   }
   const body: Record<string, unknown> = {
-    model: config.llmModel,
+    model,
     messages,
     temperature: 0.2
   }
   if (opts.maxTokens) body.max_tokens = opts.maxTokens
 
   let lastError: Error | null = null
-  for (const url of chatUrls(config.llmUrl)) {
+  for (const chatUrl of chatUrls(url)) {
     let res: Response
     try {
-      res = await postChat(url, body)
+      res = await postChat(chatUrl, body, apiKey)
     } catch (error) {
       const e = error as Error
       lastError = new Error(
@@ -118,12 +149,7 @@ export async function* llmChatStream(
     for (const url of chatUrls(config.llmUrl)) {
       let res: Response
       try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: llmHeaders(),
-          body: JSON.stringify(body),
-          signal: controller.signal
-        })
+        res = await postChat(url, body, config.llmApiKey, controller.signal)
       } catch (error) {
         const e = error as Error
         lastError = new Error(

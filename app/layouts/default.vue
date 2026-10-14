@@ -86,7 +86,6 @@ const userMenu = computed(() => [
 
     <SearchPalette />
     <ChatDrawer />
-    <FileViewer />
     <MoveFileDialog />
   </div>
 </template>

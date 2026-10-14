@@ -37,6 +37,11 @@ services:
       NUXT_EMBEDDING_MODEL: ${NUXT_EMBEDDING_MODEL:-ts/e5-small}
       NUXT_EMBEDDING_URL: ${NUXT_EMBEDDING_URL:-}
       NUXT_EMBEDDING_API_KEY: ${NUXT_EMBEDDING_API_KEY:-}
+      NUXT_PDF_VISION: ${NUXT_PDF_VISION:-false}
+      NUXT_PDF_VISION_MAX_PAGES: ${NUXT_PDF_VISION_MAX_PAGES:-20}
+      NUXT_VLM_URL: ${NUXT_VLM_URL:-}
+      NUXT_VLM_MODEL: ${NUXT_VLM_MODEL:-}
+      NUXT_VLM_API_KEY: ${NUXT_VLM_API_KEY:-}
     command: sh -c "npm install && npm run db:migrate && npm run dev -- --host 0.0.0.0"
     ports:
       - '3000'
