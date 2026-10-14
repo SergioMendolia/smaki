@@ -31,6 +31,15 @@ export default defineNuxtConfig({
     // search quality: max vector distance for semantic-only hits (fallback when
     // nothing matched lexically; 0.4 calibrated for bge-family multilingual models)
     searchVectorThreshold: 0.4,
+    // optional VLM description of PDF pages for visual indexing
+    // (env: NUXT_PDF_VISION / NUXT_PDF_VISION_MAX_PAGES)
+    pdfVision: false,
+    pdfVisionMaxPages: 20,
+    // vision model, separate from the conversational LLM, any OpenAI-compatible
+    // endpoint with image input (env: NUXT_VLM_URL / NUXT_VLM_MODEL / NUXT_VLM_API_KEY)
+    vlmUrl: '',
+    vlmModel: '',
+    vlmApiKey: '',
     public: {
       siteName: 'smaki'
     }

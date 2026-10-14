@@ -1,7 +1,7 @@
 import { ensureTypesense } from '../utils/bootstrap'
 import { syncAll } from '../utils/indexer'
 
-/** on boot: init db (migrations), ensure typesense collections + conversation model, sync the index */
+/** on boot: init db (migrations), ensure typesense collections, sync the index */
 export default defineNitroPlugin(async () => {
   useDb()
   let attempts = 0

@@ -2,16 +2,16 @@ import type { Client } from 'typesense'
 
 export const PAGES_COLLECTION = 'wiki_pages'
 export const CHUNKS_COLLECTION = 'wiki_chunks'
-export const HISTORY_COLLECTION = 'conversation_store'
-export const CONVERSATION_MODEL_ID = 'smaki'
 
 export const DEFAULT_SYSTEM_PROMPT =
   'You are the smaki family wiki assistant. Answer questions using ONLY the context provided in the search results. ' +
   'If the answer is not in the context, say you do not know. Answer in the language of the question. ' +
-  'Be helpful and complete: give thorough, well-structured answers — short paragraphs or a clear list when it helps — ' +
-  'rather than one terse sentence. Use all relevant context, including details from several sources when they complement each other. ' +
-  'You may mention the page paths of the sources you used, ' +
-  'but never copy the long hexadecimal document codes into your answer.'
+  'Be warm and friendly, like a knowledgeable family member: write natural, conversational prose and give ' +
+  'full, complete answers — a few well-structured sentences or a clear list, including the interesting ' +
+  'details and anecdotes the context offers — never a terse one-liner. ' +
+  'Use all relevant context, including details from several sources when they complement each other. ' +
+  'Do NOT include any citation markers like [1] in your answer — the sources are displayed to the user separately. ' +
+  'Never copy the long hexadecimal document codes into your answer.'
 
 function is404(error: unknown): boolean {
   const e = error as { httpStatus?: number, message?: string }
@@ -63,53 +63,7 @@ async function ensureCollection(client: Client, name: string, schema: Record<str
   console.log(`[smaki] typesense: created collection ${name}`)
 }
 
-async function ensureConversationModel(client: Client) {
-  const config = useRuntimeConfig()
-  if (!config.llmModel) {
-    console.warn('[smaki] NUXT_LLM_MODEL not set — RAG chat disabled, search still works')
-    return
-  }
-  // typesense needs the openai/ prefix to route via openai_url; it strips it
-  // before calling the endpoint. Without it, namespaced models (google/…,
-  // meta/…) fall through to the native gemini provider.
-  const model = /^(openai|vllm)\//.test(config.llmModel) ? config.llmModel : `openai/${config.llmModel}`
-  const body: Record<string, unknown> = {
-    id: CONVERSATION_MODEL_ID,
-    model_name: model,
-    history_collection: HISTORY_COLLECTION,
-    api_key: config.llmApiKey || 'not-needed',
-    system_prompt: config.llmSystemPrompt || DEFAULT_SYSTEM_PROMPT,
-    max_bytes: Number(config.llmMaxBytes) || 16384
-  }
-  if (config.llmUrl) {
-    if (model.startsWith('vllm/')) body.vllm_url = config.llmUrl
-    else body.openai_url = normalizeBaseUrl(config.llmUrl)
-  }
-  try {
-    const existing = (await client
-      .conversations()
-      .models(CONVERSATION_MODEL_ID)
-      .retrieve()) as unknown as Record<string, unknown>
-    // recreate the model when the configured LLM, endpoint, prompt or context size changes
-    if (
-      existing.model_name !== model ||
-      (body.openai_url && existing.openai_url !== body.openai_url) ||
-      (body.system_prompt && existing.system_prompt !== body.system_prompt) ||
-      (body.max_bytes && existing.max_bytes !== body.max_bytes)
-    ) {
-      await client.conversations().models(CONVERSATION_MODEL_ID).delete()
-      await client.conversations().models().create(body as never)
-      console.log(`[smaki] typesense: updated conversation model ${CONVERSATION_MODEL_ID} (${model})`)
-      return
-    }
-  } catch (error) {
-    if (!is404(error)) throw error
-    await client.conversations().models().create(body as never)
-    console.log(`[smaki] typesense: created conversation model ${CONVERSATION_MODEL_ID} (${model})`)
-  }
-}
-
-/** idempotently create collections + conversation model */
+/** idempotently create collections */
 export async function ensureTypesense(): Promise<void> {
   const client = useTypesense()
 
@@ -137,17 +91,4 @@ export async function ensureTypesense(): Promise<void> {
       embeddingField(['filename', 'content'])
     ]
   })
-
-  await ensureCollection(client, HISTORY_COLLECTION, {
-    name: HISTORY_COLLECTION,
-    fields: [
-      { name: 'conversation_id', type: 'string' },
-      { name: 'model_id', type: 'string' },
-      { name: 'timestamp', type: 'int32' },
-      { name: 'role', type: 'string', index: false },
-      { name: 'message', type: 'string', index: false }
-    ]
-  })
-
-  await ensureConversationModel(client)
 }

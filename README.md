@@ -4,7 +4,7 @@ A self-hosted family wiki: markdown pages on disk, hybrid full-text + semantic s
 pages **and** documents (PDF, docx…), and a RAG chat that answers questions from
 your content with source links.
 
-**Stack:** Nuxt 4 + Nitro · Nuxt UI v4 + Tailwind v4 · Pinia · Typesense (search + built-in RAG) ·
+**Stack:** Nuxt 4 + Nitro · Nuxt UI v4 + Tailwind v4 · Pinia · Typesense (search) ·
 SQLite + Drizzle · markdown with frontmatter on the filesystem.
 
 ## Quick start (dev)
@@ -28,25 +28,25 @@ The full stack (typesense + app in a container) runs with a plain
 | Variable | Meaning |
 | --- | --- |
 | `NUXT_TYPESENSE_URL` / `NUXT_TYPESENSE_API_KEY` | Typesense endpoint and key (also used by the container via `TYPESENSE_API_KEY`) |
-| `NUXT_LLM_URL` | OpenAI-compatible chat endpoint used for RAG answers. Pick a model that answers within Typesense's hard 60s LLM timeout |
+| `NUXT_LLM_URL` | OpenAI-compatible chat endpoint used for RAG answers (`/v1` may be included or not — the app tries both). The model just needs to answer within the app's 5-minute request timeout |
 | `NUXT_LLM_MODEL` | plain model name — Typesense routes via the `openai/` prefix internally and **strips it before calling your endpoint**. Leave empty to disable chat (search still works) |
 | `NUXT_LLM_API_KEY` | your key for the LLM provider |
 | `NUXT_EMBEDDING_MODEL` | default `ts/e5-small` (built-in, runs inside Typesense, no API key). For OpenAI-compatible embeddings add `NUXT_EMBEDDING_URL` (+ `NUXT_EMBEDDING_API_KEY`) |
+| `NUXT_PDF_VISION` | global default for VLM description of PDF pages (default `false` — text layer only); override per document from its document page (admin). See *Indexing & search* → *Optional PDF vision indexing* |
+| `NUXT_PDF_VISION_MAX_PAGES` | pages described per PDF when vision indexing is on (default `20`) |
+| `NUXT_VLM_URL` / `NUXT_VLM_MODEL` / `NUXT_VLM_API_KEY` | the vision model, fully separate from the conversational LLM: any OpenAI-compatible endpoint with image input (e.g. Infomaniak AI's Kimi, Apertus or Ministral). Required when `NUXT_PDF_VISION=true` |
 
 ⚠️ Switching embedding models requires recreating the Typesense collections
 (delete them or `docker compose down -v` — they are rebuilt automatically at next boot).
 
 ### Things worth knowing (learned the hard way)
 
-- **Typesense validates the LLM at conversation-model creation** — your LLM provider must
-  be reachable *before* the app boots (or before its next 30s bootstrap retry).
-- **Typesense enforces a hard 60s timeout per LLM call.** Verbose "thinking" models
-  will blow it — pick a model that answers fast.
-- **Typesense must be able to reach the LLM endpoint.** Typesense runs in a container:
-  `localhost`/`host.docker.internal` point at *itself* (or get blocked by the host
-  firewall). With a remote provider this is a non-issue — just use its public URL.
-- The app recreates the Typesense conversation model automatically whenever you change
-  `NUXT_LLM_MODEL`/`NUXT_LLM_URL`.
+- **The app calls the LLM itself for RAG** — Typesense only does retrieval. The LLM
+  endpoint must be reachable *from the app* (`localhost` is fine now; it no longer
+  needs to be reachable from inside the Typesense container).
+- **Chat history lives in the browser** — the chat store sends the last 10 turns with
+  each request; nothing is stored server-side, so reloading the page resets the
+  conversation.
 
 ## How content works
 
@@ -77,9 +77,10 @@ content/
   "attachment" concept, they belong to their folder and are never tied to a page.
   Text is extracted (`unpdf` for PDF, `mammoth` for docx), chunked (~1200 chars,
   overlapping), embedded and indexed — searchable, quotable by the chat, and listed in
-  the sidebar and folder pages. Clicking one opens it in a viewer modal (inline preview
-  for PDF/images/text, download otherwise). Hand-editing files on disk works; a dev
-  watcher re-indexes changes within ~1s.
+  the sidebar and folder pages. Clicking one opens the document's own page at its
+  content path (e.g. `/wiki/recipes/scan.pdf`) with inline preview, indexation
+  status, indexed chunks and — for admins — reindex and per-document PDF vision.
+  Hand-editing files on disk works; a dev watcher re-indexes changes within ~1s.
 - **Moving things around:** pages, folders and files can be **moved from the UI**
   (hover a tree entry or use the Move button on pages/folders). Moving a page moves its
   `.md`; moving a folder moves everything inside it (nested pages and files follow);
@@ -89,11 +90,11 @@ content/
 
 ## Indexing & search
 
-- On boot the server ensures Typesense collections (`wiki_pages`, `wiki_chunks`,
-  `conversation_store`) and the conversation model exist (idempotent, retried every 30s
-  if Typesense/LLM are down), then runs a **hash-diff sync** (content hash in SQLite vs
-  disk). Also triggered by the dev watcher, after every save/move/delete, and from the
-  user menu → *Re-index wiki* (`POST /api/admin/sync`).
+- On boot the server ensures the Typesense collections (`wiki_pages`, `wiki_chunks`)
+  exist (idempotent, retried every 30s if Typesense is down), then runs a
+  **hash-diff sync** (content hash in SQLite vs disk). Also triggered by the dev watcher,
+  after every save/move/delete, and from the user menu → *Re-index wiki*
+  (`POST /api/admin/sync`).
 - **Search** (`GET /api/search?q=`) is hybrid — typo-tolerant lexical + semantic embedding —
   across pages and document chunks, with highlighted snippets. ⌘K opens it anywhere.
   Quality rules:
@@ -107,14 +108,34 @@ content/
   - chunk content is indexed with **infix** search as a fallback, so queries still match
     inside words glued together by broken PDF text layers ("dudocument" → "document").
     Glyph-spaced extractions ("N u m é r o") are normalized at extraction time.
+- **Optional PDF vision indexing:** with a vision-capable model configured
+  (`NUXT_VLM_URL` / `NUXT_VLM_MODEL` / `NUXT_VLM_API_KEY`, any OpenAI-compatible
+  endpoint with image input — separate from the conversational LLM), PDF pages can
+  additionally be rendered to images and described by the VLM (visible text, tables,
+  charts, diagrams, photos), making scans without a text layer searchable. By default
+  this is **off** (`NUXT_PDF_VISION=false`, text layer only) and can be switched on
+  **per document** from its document page (admin). Vision descriptions are cached in
+  SQLite per file hash — reindexes and embedding-model changes reuse them instead of
+  re-calling the VLM. Pages per PDF are capped at `NUXT_PDF_VISION_MAX_PAGES` (default
+  20). Indexed chunks are persisted in SQLite (`file_chunks`) and shown on the
+  document page and in the admin index overview.
 - **Recommended for non-English content:** use multilingual embeddings from an
   OpenAI-compatible provider, e.g. set `NUXT_EMBEDDING_MODEL=<model>`,
   `NUXT_EMBEDDING_URL=<your-provider>/v1`, `NUXT_EMBEDDING_API_KEY=<your-key>`.
   The collections are recreated and reindexed automatically when the embedding
   model changes.
-- **Chat** (`POST /api/chat`) uses Typesense's built-in RAG: retrieval from both
-  collections + your LLM, answering strictly from context with source links. Conversations
-  are multi-turn (history stored in Typesense, 24h TTL).
+- **Chat** (`POST /api/chat`) orchestrates RAG in the app and streams the answer:
+  on follow-up questions the LLM first rewrites the question into a standalone query
+  using the conversation history, retrieval then runs the same hybrid search over
+  both collections, and the LLM answers strictly from the assembled context in a
+  warm, conversational style (NDJSON stream: `sources`, `delta`, `done` events;
+  markdown rendered server-side in `done`). Citation markers are stripped from the
+  answer text — sources are shown separately as clickable links. Conversations are
+  multi-turn; the history is kept in the browser and sent with each request.
+- **AI editing**: every page editor has a built-in AI assistant (Milkdown Crepe's
+  AI feature, backed by `POST /api/ai/edit`). Select text and give an instruction —
+  or type one with the cursor placed — and the rewrite streams in with a diff
+  you accept or reject. Autosave persists the page only after you accept.
 
 ## Auth
 

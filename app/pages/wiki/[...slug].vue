@@ -3,6 +3,7 @@ import { useChatStore } from '~/stores/chat'
 import { useTreeStore } from '~/stores/tree'
 import PageEditor from '~/components/PageEditor.vue'
 import CreatePageDialog from '~/components/CreatePageDialog.vue'
+import DocumentView, { type DocumentData } from '~/components/DocumentView.vue'
 
 interface ChildNode {
   name: string
@@ -34,7 +35,6 @@ interface DocItem {
 const route = useRoute()
 const tree = useTreeStore()
 const chat = useChatStore()
-const viewer = useFileViewer()
 const mover = useMove()
 const toast = useToast()
 
@@ -51,7 +51,22 @@ const apiUrl = computed(() =>
   pagePath.value ? `/api/wiki/page/${enc(pagePath.value)}` : '/api/wiki/page'
 )
 
-const { data: page, error } = await useFetch<PageResponse>(apiUrl)
+// one payload for both kinds of content: if the slug points at a document
+// (a non-.md file on disk), the document API answers; otherwise it's a page
+const { data: payload, error, refresh: refreshContent } = await useAsyncData(
+  async () => {
+    if (pagePath.value) {
+      const doc = await $fetch<DocumentData>(`/api/wiki/document/${enc(pagePath.value)}`).catch(() => null)
+      if (doc) return { kind: 'doc' as const, doc }
+    }
+    const page = await $fetch<PageResponse>(apiUrl.value)
+    return { kind: 'page' as const, page }
+  },
+  { watch: [pagePath] }
+)
+
+const document = computed(() => (payload.value?.kind === 'doc' ? payload.value.doc : null))
+const page = computed(() => (payload.value?.kind === 'page' ? payload.value.page : null))
 
 const createOpen = ref(false)
 const folderOpen = ref(false)
@@ -101,11 +116,19 @@ async function onDelete() {
   }
 }
 
-useHead(() => ({ title: page.value?.title ? `${page.value.title} — smaki` : 'smaki' }))
+useHead(() => ({
+  title: document.value
+    ? `${document.value.filename} — smaki`
+    : page.value?.title
+      ? `${page.value.title} — smaki`
+      : 'smaki'
+}))
 </script>
 
 <template>
-  <div v-if="error" class="mx-auto max-w-3xl">
+  <DocumentView v-if="document" :doc="document" @refresh="refreshContent()" />
+
+  <div v-else-if="error" class="mx-auto max-w-3xl">
     <!-- error / not found -->
     <UAlert
       color="warning"
@@ -225,9 +248,12 @@ useHead(() => ({ title: page.value?.title ? `${page.value.title} — smaki` : 's
                 :name="doc.mime.startsWith('image/') ? 'i-lucide-image' : 'i-lucide-file'"
                 class="h-4 w-4 text-muted"
               />
-              <button type="button" class="truncate hover:text-primary" @click="viewer.open(doc)">
+              <NuxtLink
+                :to="`/wiki/${doc.dir ? enc(doc.dir) + '/' : ''}${enc(doc.filename)}`"
+                class="truncate hover:text-primary"
+              >
                 {{ doc.filename }}
-              </button>
+              </NuxtLink>
               <button
                 type="button"
                 class="ms-auto hidden shrink-0 text-muted hover:text-primary group-hover:block"
