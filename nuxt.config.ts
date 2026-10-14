@@ -12,6 +12,9 @@ export default defineNuxtConfig({
     '/': { redirect: '/wiki' }
   },
   runtimeConfig: {
+    // production hardening (env: NUXT_ALLOWED_HOSTS / NUXT_SECURE_COOKIES)
+    allowedHosts: '',
+    secureCookies: false,
     // filesystem
     contentDir: 'content',
     dataDir: 'data',

@@ -29,6 +29,20 @@
       "when": 1791983001544,
       "tag": "0003_minor_wonder_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791992533378,
+      "tag": "0004_premium_abomination",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791992543915,
+      "tag": "0005_boring_whiplash",
+      "breakpoints": true
     }
   ]
 }

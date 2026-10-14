@@ -1,0 +1,41 @@
+# Production deployment: pulls the prebuilt image from GHCR (built by the
+# Docker workflow) — no checkout, no Node needed on the server.
+# Usage: keep this file next to a `.env` (see .env.example), then
+#   docker compose -f docker-compose.prod.yml up -d
+name: smaki
+
+services:
+  typesense:
+    image: typesense/typesense:30.2
+    restart: unless-stopped
+    command: ['--data-dir', '/data', '--api-key', '${TYPESENSE_API_KEY}', '--enable-cors']
+    volumes:
+      - typesense-data:/data
+    networks:
+      default:
+        aliases: ['smaki-typesense']
+
+  app:
+    image: ghcr.io/sergiomendolia/smaki:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # reachable from the app container; overrides the .env value
+      NUXT_TYPESENSE_URL: http://smaki-typesense:8108
+      NUXT_TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+    volumes:
+      # wiki content lives on the server and is edited via the UI
+      - ./content:/app/content
+      # SQLite db + sessions + search cache
+      - ./data:/app/data
+    # only reachable from the host itself — put a reverse proxy (caddy,
+    # nginx, traefik…) in front for TLS and hostname routing.
+    # Unusual host port (overridable via APP_PORT in .env) to avoid clashing
+    # with the usual dev suspects on 3000
+    ports:
+      - '127.0.0.1:${APP_PORT:-3977}:3000'
+    depends_on:
+      - typesense
+
+volumes:
+  typesense-data:

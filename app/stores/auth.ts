@@ -2,8 +2,7 @@ import { defineStore } from 'pinia'
 
 export interface AuthUser {
   id: string
-  email: string
-  name: string
+  username: string
   role: 'admin' | 'member'
 }
 
@@ -21,17 +20,10 @@ export const useAuthStore = defineStore('auth', () => {
     checked.value = true
   }
 
-  async function login(email: string, password: string) {
+  async function login(username: string, password: string) {
     user.value = await $fetch<AuthUser>('/api/auth/login', {
       method: 'POST',
-      body: { email, password }
-    })
-  }
-
-  async function register(name: string, email: string, password: string) {
-    user.value = await $fetch<AuthUser>('/api/auth/register', {
-      method: 'POST',
-      body: { name, email, password }
+      body: { username, password }
     })
   }
 
@@ -41,5 +33,5 @@ export const useAuthStore = defineStore('auth', () => {
     await navigateTo('/login')
   }
 
-  return { user, checked, fetchMe, login, register, logout }
+  return { user, checked, fetchMe, login, logout }
 })

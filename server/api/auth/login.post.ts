@@ -3,20 +3,20 @@ import { tables, useDb } from '../../utils/db'
 import { createSession, verifyPassword } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ email?: string, password?: string }>(event)
-  const email = body.email?.trim().toLowerCase() ?? ''
+  const body = await readBody<{ username?: string, password?: string }>(event)
+  const username = body.username?.trim().toLowerCase() ?? ''
   const password = body.password ?? ''
-  if (!email || !password) {
-    throw createError({ statusCode: 400, statusMessage: 'Email and password are required' })
+  if (!username || !password) {
+    throw createError({ statusCode: 400, statusMessage: 'Username and password are required' })
   }
   const user = useDb()
     .select()
     .from(tables.users)
-    .where(eq(tables.users.email, email))
+    .where(eq(tables.users.username, username))
     .get()
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    throw createError({ statusCode: 401, statusMessage: 'Invalid email or password' })
+    throw createError({ statusCode: 401, statusMessage: 'Invalid username or password' })
   }
   await createSession(event, user.id)
-  return { id: user.id, email: user.email, name: user.name, role: user.role }
+  return { id: user.id, username: user.username, role: user.role }
 })
