@@ -187,8 +187,10 @@ and overrides the `.env` value — don't set it.
 - `./content/` (wiki markdown + documents) and `./data/` (SQLite, sessions)
   are mounted; everything is edited through the UI. The image's baked-in
   content is only a bootstrap and is shadowed by the mount.
-- The app port is published on **localhost only** (`127.0.0.1:3000`) — put a
-  reverse proxy (caddy, nginx, traefik…) in front for TLS and hostname routing.
+- The app port is published on **localhost only**, on the unusual port `3977`
+  (override with `APP_PORT` in `.env`) to avoid clashing with other services —
+  put a reverse proxy (caddy, nginx, traefik…) in front for TLS and hostname
+  routing.
 - Typesense is not exposed at all; it lives on the compose network.
 
 ### Upgrades

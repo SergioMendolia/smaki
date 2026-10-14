@@ -29,9 +29,11 @@ services:
       # SQLite db + sessions + search cache
       - ./data:/app/data
     # only reachable from the host itself — put a reverse proxy (caddy,
-    # nginx, traefik…) in front for TLS and hostname routing
+    # nginx, traefik…) in front for TLS and hostname routing.
+    # Unusual host port (overridable via APP_PORT in .env) to avoid clashing
+    # with the usual dev suspects on 3000
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:${APP_PORT:-3977}:3000'
     depends_on:
       - typesense
 
