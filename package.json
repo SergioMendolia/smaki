@@ -40,7 +40,7 @@
     "unpdf": "^1.8.1"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.143",
+    "@iconify-json/lucide": "^1.2.146",
     "@nuxt/eslint": "^1.17.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/markdown-it": "^14.2.0",
