@@ -48,7 +48,7 @@
     "eslint": "^10.12.0",
     "typescript": "5.9.3",
     "vitest": "^5.0.5",
-    "vue-tsc": "^3.3.13"
+    "vue-tsc": "^3.3.14"
   },
   "allowScripts": {
     "better-sqlite3@13.0.3": true,
