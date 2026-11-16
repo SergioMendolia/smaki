@@ -20,7 +20,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@milkdown/crepe": "^7.22.3",
+    "@milkdown/crepe": "^7.23.0",
     "@napi-rs/canvas": "^1.0.13",
     "@node-rs/argon2": "^2.2.2",
     "@nuxt/ui": "^4.11.3",
