@@ -23,7 +23,7 @@
     "@milkdown/crepe": "^7.23.0",
     "@napi-rs/canvas": "^1.2.0",
     "@node-rs/argon2": "^2.2.2",
-    "@nuxt/ui": "^4.11.3",
+    "@nuxt/ui": "^4.13.1",
     "@pinia/nuxt": "^1.0.3",
     "@tailwindcss/typography": "^0.5.20",
     "better-sqlite3": "^13.2.0",
